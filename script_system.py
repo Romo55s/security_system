@@ -185,6 +185,15 @@ def start_server(host, port):
 
                 conn.sendall(b"Message saved to file 'received_message'.")
 
+def get_host_ip():
+    try:
+        host_name = socket.gethostname()
+        host_ip = socket.gethostbyname(host_name)
+        return host_ip
+    except:
+        print("Unable to get Host Ip")
+        return None
+
 
 def start_client(host, port):
     mac_address = get_mac_address()
@@ -250,7 +259,7 @@ def start_client(host, port):
 
 def main():
     mode = input("Enter 'client' to start a connection or 'server' to wait for a connection: ").strip().lower()
-    host = 'localhost'
+    host = get_host_ip()
     port = 12345
     if mode == 'client':
         target_ip = input("Enter the destination IP: ").strip()
