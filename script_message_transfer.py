@@ -273,15 +273,15 @@ def start_client(host, port):
             message_hash_sha384 = hashlib.sha384(message).hexdigest()
 
             aes_key = secrets.token_bytes(32)
-            encrypted_message = bytes_to_base64(encrypt_with_aes(aes_key, message))
-            encrypted_key = bytes_to_base64(encrypt_with_rsa(public_key, aes_key))
+            encrypted_message = encrypt_with_aes(aes_key, message)
+            encrypted_key = encrypt_with_rsa(public_key, aes_key)
             encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
 
             if use_steg == 'y':
                 image_path = input("Enter the path of the image: ").strip()
                 if os.path.isfile(image_path):
                     try:
-                        secret_image_path = embed_message_in_image(image_path, encrypted_message.decode())
+                        secret_image_path = embed_message_in_image(image_path, encrypted_message)
                         with open(secret_image_path, 'rb') as img_file:
                             encrypted_message = img_file.read()
                     except lsb.exceptions.ImageException as e:
@@ -297,8 +297,8 @@ def start_client(host, port):
 
             data_to_send = encrypted_key + b'::' + encrypted_message + b'::' + message_hash_sha384.encode() + b'::' + encrypted_message_hash_sha512.encode()
 
-            print(f"Sending encrypted_key: {encrypted_key.decode()}")
-            print(f"Sending encrypted_message: {encrypted_message}")
+            print(f"Sending encrypted_key: {encrypted_key.hex()}")
+            print(f"Sending encrypted_message: {encrypted_message.hex()}")
             print(f"Sending sha512_hash: {encrypted_message_hash_sha512}")
             send_in_chunks(client_socket, data_to_send)
             response = client_socket.recv(1024)
