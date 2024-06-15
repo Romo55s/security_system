@@ -248,6 +248,8 @@ def get_host_ip():
         print("Unable to get Host Ip")
         return None
 
+        client_socket.connect((host, port))
+
 def start_client(host, port):
     mac_address = get_mac_address()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
@@ -270,30 +272,30 @@ def start_client(host, port):
             elif input_type == 'message':
                 user_input = input("Enter the message to send: ").encode('utf-8')
                 message = hashlib.sha384(user_input).digest()
+                sha384_hash = hashlib.sha384(message).hexdigest()
+                sha512_hash = hashlib.sha512(message).hexdigest()
+                is_steganography = False
             elif input_type == 'file':
                 file_path = input("Enter the path of the file: ").strip()
                 if os.path.isfile(file_path):
                     with open(file_path, 'rb') as file:
                         message = file.read()
+                    sha384_hash = hashlib.sha384(message).hexdigest()
+                    sha512_hash = hashlib.sha512(message).hexdigest()
+                    is_steganography = False
                 else:
                     print("File not found. Please try again.")
                     continue
 
             use_steg = input("Use steganography techniques? An image will be requested (Y/N)").strip().lower()
-            message_hash_sha384 = hashlib.sha384(message).hexdigest()
-
-            aes_key = secrets.token_bytes(32)
-            encrypted_message = encrypt_with_aes(aes_key, message)
-            encrypted_key = encrypt_with_rsa(public_key, aes_key)
-            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
-
             if use_steg == 'y':
                 image_path = input("Enter the path of the image: ").strip()
                 if os.path.isfile(image_path):
                     try:
-                        secret_image_path = embed_message_in_image(image_path, encrypt_with_aes(aes_key, message))
-                        with open(secret_image_path, 'rb') as img_file:
-                            encrypted_message = img_file.read()
+                        secret_image_path = embed_message_in_image(image_path, message)
+                        message = base64.b64encode(message)
+                        encrypted_message = secret_image_path.encode()
+                        is_steganography = True
                     except lsb.exceptions.ImageException as e:
                         print(f"Error: Failed to embed the message into the steganography image. Reason: {e}")
                         continue
@@ -301,12 +303,17 @@ def start_client(host, port):
                     print("Image not found. Please try again.")
                     continue
 
-            print(f"SHA-384 Hash of the message: {message_hash_sha384}")
+            aes_key = secrets.token_bytes(32)
+            encrypted_message = encrypt_with_aes(aes_key, message)
+            encrypted_key = encrypt_with_rsa(public_key, aes_key)
+            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
+
+            print(f"SHA-384 Hash of the message: {sha384_hash}")
             print(f"Encrypted message: {encrypted_message}")
             print(f"SHA-512 Hash of the encryption: {encrypted_message_hash_sha512}")
 
-            encrypted = encrypt_with_aes(aes_key, message)
-            data_to_send = format_data(encrypted_key, encrypted)
+            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography)
+
             # Envía la longitud de los datos al servidor
             data_length = len(data_to_send)
             client_socket.sendall(data_length.to_bytes(4, 'big'))
@@ -317,7 +324,7 @@ def start_client(host, port):
 
             send_in_chunks(data_to_send, client_socket)
             response = client_socket.recv(1024)
-            print(f"Server response: {response.decode('utf-8')}")   
+            print(f"Server response: {response.decode('utf-8')}")
 
 def main():
     mode = input("Enter 'client' to start a connection or 'server' to wait for a connection: ").strip().lower()
