@@ -196,16 +196,17 @@ def start_server(host, port):
 
             while True:
                 public_key = conn.recv(1024)
-                serialized_public_key = public_key.decode()
+                serialized_public_key = public_key.decode().strip()
 
                 try:
                     public_key = serialization.load_pem_public_key(
                         serialized_public_key.encode(),
                         backend=default_backend()
                     )
-                except serialization.InvalidKey as e:
+                except ValueError as e:
                     print(f"Error: Failed to load public key. Reason: {e}")
-                    continue
+                    conn.sendall(b"INVALID_PUBLIC_KEY")
+                    return
 
                 # Enviar la llave pública al cliente
                 conn.sendall(serialized_public_key.encode())
@@ -275,7 +276,12 @@ def start_client(host, port):
         print(f"Server MAC Address: {server_mac}")
 
         # Enviar la llave pública
-        private_key, public_key = generate_rsa_key_pair()
+        try:
+            private_key, public_key = generate_rsa_key_pair()
+        except ValueError as e:
+            print(f"Error: Failed to generate RSA key pair. Reason: {e}")
+            return
+
         serialized_public_key = serialize_public_key(public_key)
         client_socket.sendall(serialized_public_key)
 
