@@ -15,6 +15,12 @@ import base64
 import secrets
 from scapy.all import ARP, Ether, srp
 
+def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
+    if is_steganography:
+        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash + b'::' + sha512_hash
+    else:
+        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash
+
 def check_root():
     return os.geteuid() == 0
 
@@ -183,20 +189,18 @@ def start_server(host, port):
                 data = receive_in_chunks(conn, data_length)
                 if not data:
                     break
+
+                print(f"Received data: {data}")
+
                 received_data = data.split(b'::')
                 print(f"Received encrypted_key: {received_data[0].hex()}")
                 print(f"Received encrypted_message: {received_data[1]}")
 
-                if len(received_data) == 4:
-                    encrypted_key, encrypted_message, sha384_hash, sha512_hash = received_data
-                    is_steganography = True
-                elif len(received_data) == 3:
-                    encrypted_key, encrypted_message, sha384_hash = received_data
-                    sha512_hash = None
-                    is_steganography = False
-                else:
-                    print("Error: Incorrect data format received.")
-                    break
+                is_steganography = (len(received_data) == 4)
+                if is_steganography:
+                    received_data = received_data[:3] + [b''] + received_data[3:]
+
+                encrypted_key, encrypted_message, sha384_hash, sha512_hash = received_data
 
                 aes_key = decrypt_with_rsa(private_key, base64_to_bytes(encrypted_key))
                 decrypted_message = decrypt_with_aes(aes_key, base64_to_bytes(encrypted_message))
@@ -301,21 +305,19 @@ def start_client(host, port):
             print(f"Encrypted message: {encrypted_message}")
             print(f"SHA-512 Hash of the encryption: {encrypted_message_hash_sha512}")
 
-            data_to_send = encrypted_key + b'::' + encrypted_message + b'::' + message_hash_sha384.encode() + b'::' + encrypted_message_hash_sha512.encode()
-
-            # Obtiene la longitud de los datos
-            data_length = len(data_to_send)
-
+            encrypted = encrypt_with_aes(aes_key, message)
+            data_to_send = format_data(encrypted_key, encrypted)
             # Envía la longitud de los datos al servidor
-            client_socket.send(data_length.to_bytes(4, 'big'))
+            data_length = len(data_to_send)
+            client_socket.sendall(data_length.to_bytes(4, 'big'))
 
             print(f"Sending encrypted_key: {encrypted_key.hex()}")
             print(f"Sending encrypted_message: {encrypted_message.hex()}")
             print(f"Sending sha512_hash: {encrypted_message_hash_sha512}")
 
-            send_in_chunks(data_to_send,client_socket)
+            send_in_chunks(data_to_send, client_socket)
             response = client_socket.recv(1024)
-            print(f"Server response: {response.decode('utf-8')}")
+            print(f"Server response: {response.decode('utf-8')}")   
 
 def main():
     mode = input("Enter 'client' to start a connection or 'server' to wait for a connection: ").strip().lower()
