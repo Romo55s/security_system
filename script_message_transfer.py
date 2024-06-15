@@ -325,13 +325,11 @@ def start_client(host, port):
             aes_key = generate_aes_key()
             encrypted_message = encrypt_with_aes(aes_key, message)
             encrypted_key = encrypt_with_rsa(public_key, aes_key)
-            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
 
             print(f"SHA-384 Hash of the message: {sha384_hash}")
             print(f"Encrypted message: {encrypted_message}")
-            print(f"SHA-512 Hash of the encryption: {encrypted_message_hash_sha512}")
 
-            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography, encrypted_message_hash_sha512)
+            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography)
 
             client_socket.sendall(data_to_send)
 
