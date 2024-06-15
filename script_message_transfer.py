@@ -181,8 +181,6 @@ def start_server(host, port):
                 received_data = data.split(b'::')
                 print(f"Received encrypted_key: {received_data[0].decode()}")
                 print(f"Received encrypted_message: {received_data[1]}")
-                print(f"Received sha384_hash: {received_data[2].decode()}")
-                print(f"Received sha512_hash: {received_data[3].decode()}")
                 
                 if len(received_data) == 4:
                     encrypted_key, encrypted_data, sha384_hash, sha512_hash = received_data
