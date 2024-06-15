@@ -270,7 +270,7 @@ def start_client(host, port):
                 encrypted_message = encrypt_with_aes(aes_key, message)
                 encrypted_key = encrypt_with_rsa_inverted(public_key, aes_key)
 
-            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash.encode(), sha512_hash.encode(), blake2_hash.encode(), is_steganography.encode())
+            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash.encode(), sha512_hash.encode(), blake2_hash.encode(), is_steganography)
             client_socket.sendall(data_to_send)
 
             response = client_socket.recv(1024)
