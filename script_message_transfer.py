@@ -128,22 +128,26 @@ def bytes_to_base64(bytes):
 def base64_to_bytes(base):
     return base64.b64decode(base)
 
-def send_in_chunks(socket, data):
-    total_size = len(data)
-    socket.sendall(total_size.to_bytes(8, byteorder='big'))
-    for i in range(0, total_size, CHUNK_SIZE):
-        chunk = data[i:i+CHUNK_SIZE]
-        socket.sendall(chunk)
+def send_in_chunks(data, sock):
+    bytes_sent = 0
+    while bytes_sent < len(data):
+        sent = sock.send(data[bytes_sent:])
+        if sent == 0:
+            raise RuntimeError("Socket connection broken")
+        bytes_sent = sent + bytes_sent
+        print(f"Data sent: {data[bytes_sent - sent:bytes_sent]}")  # print statement to check the data being sent
 
-def receive_in_chunks(socket):
-    total_size = int.from_bytes(socket.recv(8), byteorder='big')
-    data = bytearray()
-    while len(data) < total_size:
-        chunk = socket.recv(CHUNK_SIZE)
-        if not chunk:
-            break
-        data.extend(chunk)
-    return bytes(data)
+def receive_in_chunks(sock, length):
+    chunks = []
+    bytes_recd = 0
+    while bytes_recd < length:
+        chunk = sock.recv(min(length - bytes_recd, 2048))
+        if chunk == b'':
+            raise RuntimeError("Socket connection broken")
+        chunks.append(chunk)
+        bytes_recd = bytes_recd + len(chunk)
+        print(f"Data received: {chunk}")  # print statement to check the data being received
+    return b''.join(chunks)
 
 def start_server(host, port):
     private_key_path = "private_key.pem"
