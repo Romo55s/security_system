@@ -20,7 +20,7 @@ def generate_aes_key():
 
 def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, blake2_hash, is_steganography):
     steg_flag = b'1' if is_steganography else b'0'
-    return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode() + b'::' + blake2_hash.encode() + b'::' + steg_flag
+    return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash + b'::' + sha512_hash + b'::' + blake2_hash + b'::' + steg_flag
 
 def check_root():
     return os.geteuid() == 0
