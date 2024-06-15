@@ -15,6 +15,9 @@ import base64
 import secrets
 from scapy.all import ARP, Ether, srp
 
+def generate_aes_key():
+    return secrets.token_bytes(32)
+
 def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
     if is_steganography:
         return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode()
