@@ -131,9 +131,13 @@ def hash_blake2(data):
 
 def embed_message_in_image(image_path, message):
     secret_image_path = "secret_image.png"
-    secret_image = lsb.hide(image_path, message)
-    secret_image.save(secret_image_path)
-    return secret_image_path
+    try:
+        secret_image = lsb.hide(image_path, message)
+        secret_image.save(secret_image_path)
+        return secret_image_path
+    except lsb.exceptions.ImageException as e:
+        print(f"Error: Failed to embed the message into the steganography image. Reason: {e}")
+        return None
 
 def bytes_to_base64(bytes):
     return base64.b64encode(bytes)
@@ -148,7 +152,6 @@ def send_in_chunks(data, sock):
         if sent == 0:
             raise RuntimeError("Socket connection broken")
         bytes_sent = sent + bytes_sent
-        print(f"Data sent: {data[bytes_sent - sent:bytes_sent]}")  # print statement to check the data being sent
 
 def receive_in_chunks(sock, length):
     chunks = []
@@ -159,7 +162,6 @@ def receive_in_chunks(sock, length):
             raise RuntimeError("Socket connection broken")
         chunks.append(chunk)
         bytes_recd = bytes_recd + len(chunk)
-        print(f"Data received: {chunk}")  # print statement to check the data being received
     return b''.join(chunks)
 
 def validate_blake2_hash(received_hash, data):
@@ -190,37 +192,28 @@ def start_server(host, port):
                 else:
                     print("Getting the MAC Address of another device requires administrator permissions")
                 conn.sendall(serialized_public_key)
-                while True:
-                    try:
-                        data_length = int.from_bytes(receive_in_chunks(conn, 4), 'big')
-                        data = receive_in_chunks(conn, data_length)
-                        if not data:
-                            break
-                        received_data = data.split(b'::')
-                        encrypted_key, encrypted_message, received_sha384_hash, received_sha512_hash, steg_flag = received_data[:5]
-                        decrypted_key = decrypt_with_rsa(private_key, encrypted_key)
-                        decrypted_message = decrypt_with_aes(decrypted_key, encrypted_message)
-                        blake2_hash = hashlib.blake2s(decrypted_message).hexdigest()
-                        if blake2_hash != received_sha512_hash.decode():
-                            print("Error: Blake2 hash does not match. Communication may have been altered.")
-                            break
-                        sha384_hash = hashlib.sha384(decrypted_message).hexdigest()
-                        if sha384_hash != received_sha384_hash.decode():
-                            print("Error: SHA-384 hash does not match.")
-                            break
-                        sha512_hash = hashlib.sha512(decrypted_message).hexdigest()
-                        if sha512_hash != received_sha512_hash.decode():
-                            print("Error: SHA-512 hash does not match.")
-                            break
+                try:
+                    data_length = int.from_bytes(receive_in_chunks(conn, 4), 'big')
+                    data = receive_in_chunks(conn, data_length)
+                    if not data:
+                        break
+                    received_data = data.split(b'::')
+                    encrypted_key, encrypted_message, received_sha384_hash, received_sha512_hash, steg_flag = received_data[:5]
+                    decrypted_key = decrypt_with_rsa(private_key, encrypted_key)
+                    decrypted_message = decrypt_with_aes(decrypted_key, encrypted_message)
+                    blake2_hash = hash_blake2(decrypted_message).hexdigest()
+                    if not validate_blake2_hash(received_sha512_hash, decrypted_message):
+                        print("Error: Blake2 hash does not match.")
+                    else:
                         with open("received_message", 'wb') as file:
                             file.write(decrypted_message)
                         print("Hashes verified and message received successfully.")
                         conn.sendall(b"Hashes verified and message received successfully.")
-                        if steg_flag == b'1':
-                            os.remove("secret_image.png")
-                    except Exception as e:
-                        print(f"An error occurred: {e}")
-                        break
+                    if steg_flag == b'1':
+                        os.remove("secret_image.png")
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    break
 
 def get_host_ip():
     try:
@@ -249,53 +242,35 @@ def start_client(host, port):
 
         while True:
             input_type = input("Enter 'message' to send a message, 'file' to send the contents of a file (or 'exit' to quit): ").strip().lower()
-            if input_type == 'exit':
+            if input_type == "exit":
                 break
-            elif input_type == 'message':
-                user_input = input("Enter the message to send: ").encode('utf-8')
-                message = user_input
-                sha384_hash = hashlib.sha384(user_input).hexdigest()
-                sha512_hash = hashlib.sha512(user_input).hexdigest()
-                is_steganography = False
-            elif input_type == 'file':
-                file_path = input("Enter the path of the file: ").strip()
-                if os.path.isfile(file_path):
-                    with open(file_path, 'rb') as file:
-                        message = file.read()
-                    sha384_hash = hashlib.sha384(message).hexdigest()
-                    sha512_hash = hashlib.sha512(message).hexdigest()
-                    is_steganography = False
-                else:
-                    print("File not found. Please try again.")
-                    continue
+            elif input_type == "message" or input_type == "file":
+                user_input = input("Enter the message or file contents to send: ")
+                message = user_input.encode()
+            else:
+                print("Invalid input. Please enter 'message', 'file' or 'exit'.")
+                continue
 
-            blake2_hash = hashlib.blake2s(message).hexdigest()
+            sha384_hash = hashlib.sha384(message).hexdigest()
+            sha512_hash = hashlib.sha512(message).hexdigest()
+            is_steganography = input("Use steganography techniques? An image will be requested (Y/N)").strip().lower() == "y"
 
-            use_steg = input("Use steganography techniques? An image will be requested (Y/N)").strip().lower()
-            if use_steg == 'y':
+            if is_steganography:
                 image_path = input("Enter the path of the image: ").strip()
                 if os.path.isfile(image_path):
-                    try:
-                        secret_image_path = embed_message_in_image(image_path, message)
-                        message = base64.b64encode(message)
-                        encrypted_message = secret_image_path.encode()
-                        is_steganography = True
-                    except lsb.exceptions.ImageException as e:
-                        print(f"Error: Failed to embed the message into the steganography image. Reason: {e}")
-                        continue
+                    secret_image_path = embed_message_in_image(image_path, message)
+                    message = os.path.basename(secret_image_path).encode()
+                    encrypted_message = open(secret_image_path, "rb").read()
                 else:
                     print("Image not found. Please try again.")
                     continue
+            else:
+                blake2_hash = hashlib.blake2s(message).hexdigest()
+                aes_key = generate_aes_key()
+                encrypted_message = encrypt_with_aes(aes_key, message)
+                encrypted_key = encrypt_with_rsa_inverted(public_key, aes_key)
 
-            aes_key = generate_aes_key()
-            encrypted_message = encrypt_with_aes(aes_key, message)
-            encrypted_key = encrypt_with_rsa_inverted(public_key, aes_key)
-
-            print(f"SHA-384 Hash of the message: {sha384_hash}")
-            print(f"Encrypted message: {encrypted_message}")
-
-            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, blake2_hash, is_steganography)
-
+            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash.encode(), sha512_hash.encode(), blake2_hash.encode(), is_steganography.encode())
             client_socket.sendall(data_to_send)
 
             response = client_socket.recv(1024)
