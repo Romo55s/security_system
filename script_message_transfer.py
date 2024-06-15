@@ -18,18 +18,6 @@ from scapy.all import ARP, Ether, srp
 def generate_aes_key():
     return secrets.token_bytes(32)
 
-def generate_private_rsa_key():
-    return rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-        backend=default_backend()
-    )
-
-def generate_public_rsa_key(private_key):
-    return private_key.public_key()
-
-sha384_hash = hashlib.sha384()
-
 def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
     steg_flag = b'1' if is_steganography else b'0'
     return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode() + b'::' + steg_flag
@@ -179,7 +167,18 @@ def validate_blake2_hash(received_hash, data):
     return received_hash == calculated_hash
 
 def start_server(host, port):
+    private_key_path = "private_key.pem"
+    public_key_path = "public_key.pem"
+
+    if not os.path.exists(private_key_path) or not os.path.exists(public_key_path):
+        private_key, public_key = generate_rsa_key_pair()
+        save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path)
+    else:
+        private_key, public_key = load_rsa_key_pair(private_key_path, public_key_path)
+
+    serialized_public_key = serialize_public_key(public_key)
     mac_address = get_mac_address()
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((host, port))
         server_socket.listen()
@@ -194,62 +193,44 @@ def start_server(host, port):
             else:
                 print("Getting the MAC Address of another device requires administrator permissions")
 
+            conn.sendall(serialized_public_key)
+
             while True:
-                public_key = conn.recv(1024)
-                serialized_public_key = public_key.decode().strip()
+                data_length = int.from_bytes(receive_in_chunks(conn, 4), 'big')
+                data = receive_in_chunks(conn, data_length)
+                if not data:
+                    break
 
-                try:
-                    public_key = serialization.load_pem_public_key(
-                        serialized_public_key.encode(),
-                        backend=default_backend()
-                    )
-                except ValueError as e:
-                    print(f"Error: Failed to load public key. Reason: {e}")
-                    conn.sendall(b"INVALID_PUBLIC_KEY")
-                    return
+                print(f"Received data: {data}")
 
-                # Enviar la llave pública al cliente
-                conn.sendall(serialized_public_key.encode())
+                received_data = data.split(b'::')
+                encrypted_key, encrypted_message, sha384_hash, sha512_hash, steg_flag = received_data[:5]
 
-                data = receive_in_chunks(conn, 1024)
-                Blake2_hash, encrypted_key, encrypted_message, sha512_hash, is_steganography = data.decode().split('::')
+                decrypted_key = decrypt_with_rsa(private_key, encrypted_key)
+                decrypted_message = decrypt_with_aes(decrypted_key, encrypted_message)
 
-                Blake2_hash_server = hashlib.blake2b(encrypted_key + encrypted_message).hexdigest()
+                if not validate_blake2_hash(sha512_hash.decode(), decrypted_message):
+                    print("Error: Blake2 hash does not match. Communication may have been altered.")
+                    break
 
-                if Blake2_hash_server != Blake2_hash:
-                    print("Blake2 hash is not correct. Communication may have been altered.")
-                else:
-                    print("Blake2 hash is correct.")
-                    if not is_steganography:
-                        print("Extracting message...")
-                        with open("secret_image.png", "rb") as img_file:
-                            message = img_file.read()
-                        os.remove("secret_image.png")
-                    else:
-                        message = base64.b64decode(encrypted_message)
+                calculated_sha512_hash = hashlib.sha512(decrypted_message).hexdigest()
+                if calculated_sha512_hash != sha512_hash.decode():
+                    print("Error: SHA-512 hash does not match.")
+                    break
 
-                    aes_key = decrypt_with_rsa(generate_private_rsa_key(), base64.b64decode(encrypted_key))
-                    decrypted_message = decrypt_with_aes(aes_key, message)
+                calculated_sha384_hash = hashlib.sha384(decrypted_message).hexdigest()
+                if calculated_sha384_hash != sha384_hash.decode():
+                    print("Error: SHA-384 hash does not match.")
+                    break
 
-                    print("Validating sha512 hash...")
-                    if sha512_hash == hashlib.sha512(decrypted_message).hexdigest():
-                        print("sha512 hash is correct.")
-                        print("Validating sha384 hash...")
-                        sha384_hash_server = hashlib.sha384(decrypted_message).hexdigest()
-                        if sha384_hash_server == sha384_hash:
-                            print("sha384 hash is correct.")
-                            print("The message is ready.")
-                            conn.sendall(b"READY")
-                        else:
-                            print("sha384 hash is not correct. Eliminating the message.")
-                            conn.sendall(b"HASH_ERROR")
-                    else:
-                        print("sha512 hash is not correct. Eliminating the message.")
-                        conn.sendall(b"HASH_ERROR")
+                with open("received_message", 'wb') as file:
+                    file.write(decrypted_message)
 
-                conn.sendall(b"OK")
+                print("Hashes verified and message received successfully.")
+                conn.sendall(b"Hashes verified and message received successfully.")
 
-                break
+                if steg_flag == b'1':
+                    os.remove("secret_image.png")
 
 def get_host_ip():
     try:
@@ -268,22 +249,13 @@ def start_client(host, port):
         client_socket.connect((host, port))
         print(f"Connected to {host}:{port}")
         print(f"Client MAC Address: {mac_address}")
+        if check_root():
+            print(f"Server MAC Address: {get_ip_mac_address(host)}")
+        else:
+            print("Getting the MAC Address of another device requires administrator permissions")
 
-        # Solicitar llave pública al servidor y mostrar y capturar la MAC address del otro equipo
-        public_key_request = b"REQUEST_PUBLIC_KEY"
-        client_socket.sendall(public_key_request)
-        server_mac = receive_in_chunks(client_socket, 18).decode()
-        print(f"Server MAC Address: {server_mac}")
-
-        # Enviar la llave pública
-        try:
-            private_key, public_key = generate_rsa_key_pair()
-        except ValueError as e:
-            print(f"Error: Failed to generate RSA key pair. Reason: {e}")
-            return
-
-        serialized_public_key = serialize_public_key(public_key)
-        client_socket.sendall(serialized_public_key)
+        serialized_public_key = client_socket.recv(1024)
+        public_key = serialization.load_pem_public_key(serialized_public_key, backend=default_backend())
 
         while True:
             input_type = input("Enter 'message' to send a message, 'file' to send the contents of a file (or 'exit' to quit): ").strip().lower()
@@ -328,43 +300,15 @@ def start_client(host, port):
             encrypted_message = encrypt_with_aes(aes_key, message)
             encrypted_key = encrypt_with_rsa_inverted(public_key, aes_key)
 
-            Blake2_hash = hashlib.blake2b(encrypted_key + encrypted_message).hexdigest()
+            print(f"SHA-384 Hash of the message: {sha384_hash}")
+            print(f"Encrypted message: {encrypted_message}")
 
-            data_to_send = format_data(Blake2_hash, encrypted_key, encrypted_message, sha512_hash, is_steganography)
+            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography)
+
             client_socket.sendall(data_to_send)
 
             response = client_socket.recv(1024)
             print(f"Server response: {response.decode('utf-8')}")
-
-            if not is_steganography:
-                print("Extracting message...")
-                with open("secret_image.png", "rb") as img_file:
-                    message = img_file.read()
-                os.remove("secret_image.png")
-
-            print("Validating Blake2 hash...")
-            if Blake2_hash == response.decode():
-                print("Blake2 hash is correct.")
-                if not is_steganography:
-                    print("Decrypting the message...")
-                    decrypted_message = decrypt_with_aes(aes_key, base64.b64decode(encrypted_message))
-                    print("Validating sha512 hash...")
-                    if sha512_hash == hashlib.sha512(decrypted_message).hexdigest():
-                        print("sha512 hash is correct.")
-                        print("Validating sha384 hash...")
-                        if sha384_hash == hashlib.sha384(decrypted_message).hexdigest():
-                            print("sha384 hash is correct.")
-                            print("The message is ready.")
-                        else:
-                            print("sha384 hash is not correct. Eliminating the message.")
-                    else:
-                        print("sha512 hash is not correct. Eliminating the message.")
-                else:
-                    print("The message is ready.")
-            else:
-                print("Blake2 hash is not correct. Communication may have been altered. Eliminating the message.")
-
-        print("Connection closed.")
 
 def main():
     mode = input("Enter 'client' to start a connection or 'server' to wait for a connection: ").strip().lower()
