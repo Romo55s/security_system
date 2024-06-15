@@ -282,9 +282,9 @@ def start_client(host, port):
                 image_path = input("Enter the path of the image: ").strip()
                 if os.path.isfile(image_path):
                     try:
-                        secret_image_path = embed_message_in_image(image_path, encrypted_message)
+                        secret_image_path = embed_message_in_image(image_path, encrypt_with_aes(aes_key, message))
                         with open(secret_image_path, 'rb') as img_file:
-                            encrypted_message = encrypt_with_aes(aes_key, message.encode())
+                            encrypted_message = img_file.read()
                     except lsb.exceptions.ImageException as e:
                         print(f"Error: Failed to embed the message into the steganography image. Reason: {e}")
                         continue
