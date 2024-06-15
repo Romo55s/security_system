@@ -273,7 +273,7 @@ def start_client(host, port):
             aes_key = secrets.token_bytes(32)
             encrypted_message = bytes_to_base64(encrypt_with_aes(aes_key, message))
             encrypted_key = bytes_to_base64(encrypt_with_rsa(public_key, aes_key))
-            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message.encode()).hexdigest()
+            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
 
             if use_steg == 'y':
                 image_path = input("Enter the path of the image: ").strip()
