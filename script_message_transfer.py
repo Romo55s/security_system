@@ -179,7 +179,7 @@ def start_server(host, port):
                 if not data:
                     break
                 received_data = data.split(b'::')
-                print(f"Received encrypted_key: {received_data[0].decode()}")
+                print(f"Received encrypted_key: {received_data[0].hex()}")
                 print(f"Received encrypted_message: {received_data[1]}")
                 
                 if len(received_data) == 4:
@@ -259,7 +259,8 @@ def start_client(host, port):
             if input_type == 'exit':
                 break
             elif input_type == 'message':
-                message = input("Enter the message to send: ").encode('utf-8')
+                user_input = input("Enter the message to send: ").encode('utf-8')
+                message = hashlib.sha384(user_input).digest()
             elif input_type == 'file':
                 file_path = input("Enter the path of the file: ").strip()
                 if os.path.isfile(file_path):
