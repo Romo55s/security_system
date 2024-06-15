@@ -179,7 +179,8 @@ def start_server(host, port):
             conn.sendall(serialized_public_key)
 
             while True:
-                data = receive_in_chunks(conn)
+                data_length = int(receive_in_chunks(conn, 4))
+                data = receive_in_chunks(conn, data_length)
                 if not data:
                     break
                 received_data = data.split(b'::')
@@ -305,7 +306,7 @@ def start_client(host, port):
             print(f"Sending encrypted_key: {encrypted_key.hex()}")
             print(f"Sending encrypted_message: {encrypted_message.hex()}")
             print(f"Sending sha512_hash: {encrypted_message_hash_sha512}")
-            send_in_chunks(client_socket, data_to_send)
+            send_in_chunks(data_to_send,client_socket)
             response = client_socket.recv(1024)
             print(f"Server response: {response.decode('utf-8')}")
 
