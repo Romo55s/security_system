@@ -6,9 +6,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from stegano import lsb
 from PIL import Image
 import base64
+import secrets
 from scapy.all import ARP, Ether, srp
 
 def check_root():
@@ -62,7 +66,7 @@ def load_rsa_key_pair(private_key_path, public_key_path):
             password=None,
             backend=default_backend()
         )
-    
+
     with open(public_key_path, "rb") as public_file:
         public_key = serialization.load_pem_public_key(
             public_file.read(),
@@ -96,6 +100,18 @@ def decrypt_with_rsa(private_key, encrypted_message):
             label=None
         )
     )
+
+def encrypt_with_aes(key, data):
+    iv = secrets.token_bytes(16)
+    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    return iv + encryptor.update(data) + encryptor.finalize()
+
+def decrypt_with_aes(key, data):
+    iv = data[:16]
+    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    return decryptor.update(data[16:]) + decryptor.finalize()
 
 def hash_blake2(data):
     return hashlib.blake2b(data).hexdigest()
@@ -165,38 +181,32 @@ def start_server(host, port):
 
                 received_data = data.split(b'::')
                 if len(received_data) == 4:
-                    encrypted_message, sha384_hash, sha512_hash, blake2_hash = received_data
+                    encrypted_key, encrypted_data, sha384_hash, sha512_hash = received_data
                     is_steganography = True
                 elif len(received_data) == 3:
-                    encrypted_message, sha384_hash, sha512_hash = received_data
-                    blake2_hash = None
+                    encrypted_key, encrypted_data, sha384_hash = received_data
+                    sha512_hash = None
                     is_steganography = False
                 else:
                     print("Error: Incorrect data format received.")
                     break
 
+                aes_key = decrypt_with_rsa(private_key, base64_to_bytes(encrypted_key))
+                decrypted_message = decrypt_with_aes(aes_key, base64_to_bytes(encrypted_data))
+
                 if is_steganography:
                     with open("received_image.png", "wb") as img_file:
-                        img_file.write(base64_to_bytes(encrypted_message))
-
-                    calculated_blake2_hash = hash_blake2(base64_to_bytes(encrypted_message))
-                    if calculated_blake2_hash != blake2_hash.decode():
-                        print("Error: BLAKE2 hash does not match.")
-                        break
-                    print(f"BLAKE2 Hash of the image: {calculated_blake2_hash}")
-                    print(f"Received image size: {os.path.getsize('received_image.png')} bytes")
+                        img_file.write(decrypted_message)
 
                     revealed_message = lsb.reveal("received_image.png")
                     print(f"Decrypted and revealed message from the image: {revealed_message}")
-                    encrypted_message = revealed_message.encode()
+                    decrypted_message = revealed_message.encode()
 
-                calculated_sha512_hash = hashlib.sha512(encrypted_message).hexdigest()
+                calculated_sha512_hash = hashlib.sha512(decrypted_message).hexdigest()
                 if calculated_sha512_hash != sha512_hash.decode():
                     print("Error: SHA-512 hash does not match.")
                     break
                 print(f"SHA-512 Hash of the encrypted message: {calculated_sha512_hash}")
-
-                decrypted_message = decrypt_with_rsa(private_key, base64_to_bytes(encrypted_message))
 
                 calculated_sha384_hash = hashlib.sha384(decrypted_message).hexdigest()
                 if calculated_sha384_hash != sha384_hash.decode():
@@ -234,7 +244,7 @@ def start_client(host, port):
             print("Getting the MAC Address of another device requires administrator permissions")
 
         serialized_public_key = client_socket.recv(1024)
-        public_key = serialization.load_pem_public_key(serialized_public_key)
+        public_key = serialization.load_pem_public_key(serialized_public_key, backend=default_backend())
 
         while True:
             input_type = input("Enter 'message' to send a message, 'file' to send the contents of a file (or 'exit' to quit): ").strip().lower()
@@ -254,7 +264,10 @@ def start_client(host, port):
 
             use_steg = input("Use steganography techniques? An image will be requested (Y/N)").strip().lower()
             message_hash_sha384 = hashlib.sha384(message).hexdigest()
-            encrypted_message = bytes_to_base64(encrypt_with_rsa(public_key, message))
+            
+            aes_key = secrets.token_bytes(32)
+            encrypted_message = bytes_to_base64(encrypt_with_aes(aes_key, message))
+            encrypted_key = bytes_to_base64(encrypt_with_rsa(public_key, aes_key))
             encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
 
             if use_steg == 'y':
@@ -271,13 +284,7 @@ def start_client(host, port):
             print(f"Encrypted message: {encrypted_message}")
             print(f"SHA-512 Hash of the encryption: {encrypted_message_hash_sha512}")
 
-            if use_steg == 'y':
-                image_hash_blake2 = hash_blake2(base64_to_bytes(encrypted_message))
-                print(f"BLAKE2 Hash of the image with steganography: {image_hash_blake2}")
-                print(f"File size of the image: {os.path.getsize(secret_image_path)} bytes")
-                data_to_send = encrypted_message + b'::' + message_hash_sha384.encode() + b'::' + encrypted_message_hash_sha512.encode() + b'::' + image_hash_blake2.encode()
-            else:
-                data_to_send = encrypted_message + b'::' + message_hash_sha384.encode() + b'::' + encrypted_message_hash_sha512.encode()
+            data_to_send = encrypted_key + b'::' + encrypted_message + b'::' + message_hash_sha384.encode() + b'::' + encrypted_message_hash_sha512.encode()
 
             send_in_chunks(client_socket, data_to_send)
             response = client_socket.recv(1024)
