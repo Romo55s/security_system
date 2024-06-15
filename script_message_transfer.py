@@ -18,9 +18,9 @@ from scapy.all import ARP, Ether, srp
 def generate_aes_key():
     return secrets.token_bytes(32)
 
-def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
+def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, blake2_hash, is_steganography):
     steg_flag = b'1' if is_steganography else b'0'
-    return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode() + b'::' + steg_flag
+    return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode() + b'::' + blake2_hash.encode() + b'::' + steg_flag
 
 def check_root():
     return os.geteuid() == 0
@@ -169,68 +169,58 @@ def validate_blake2_hash(received_hash, data):
 def start_server(host, port):
     private_key_path = "private_key.pem"
     public_key_path = "public_key.pem"
-
     if not os.path.exists(private_key_path) or not os.path.exists(public_key_path):
         private_key, public_key = generate_rsa_key_pair()
         save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path)
     else:
         private_key, public_key = load_rsa_key_pair(private_key_path, public_key_path)
-
     serialized_public_key = serialize_public_key(public_key)
     mac_address = get_mac_address()
-
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((host, port))
         server_socket.listen()
         print(f"Waiting for connections on {host}:{port}...")
-
-        conn, addr = server_socket.accept()
-        with conn:
-            print(f"Connected to {addr}")
-            print(f"Server MAC Address: {mac_address}")
-            if check_root():
-                print(f"Client MAC Address: {get_ip_mac_address(addr[0])}")
-            else:
-                print("Getting the MAC Address of another device requires administrator permissions")
-
-            conn.sendall(serialized_public_key)
-
-            while True:
-                data_length = int.from_bytes(receive_in_chunks(conn, 4), 'big')
-                data = receive_in_chunks(conn, data_length)
-                if not data:
-                    break
-
-                print(f"Received data: {data}")
-
-                received_data = data.split(b'::')
-                encrypted_key, encrypted_message, sha384_hash, sha512_hash, steg_flag = received_data[:5]
-
-                decrypted_key = decrypt_with_rsa(private_key, encrypted_key)
-                decrypted_message = decrypt_with_aes(decrypted_key, encrypted_message)
-
-                if not validate_blake2_hash(sha512_hash.decode(), decrypted_message):
-                    print("Error: Blake2 hash does not match. Communication may have been altered.")
-                    break
-
-                calculated_sha512_hash = hashlib.sha512(decrypted_message).hexdigest()
-                if calculated_sha512_hash != sha512_hash.decode():
-                    print("Error: SHA-512 hash does not match.")
-                    break
-
-                calculated_sha384_hash = hashlib.sha384(decrypted_message).hexdigest()
-                if calculated_sha384_hash != sha384_hash.decode():
-                    print("Error: SHA-384 hash does not match.")
-                    break
-
-                with open("received_message", 'wb') as file:
-                    file.write(decrypted_message)
-
-                print("Hashes verified and message received successfully.")
-                conn.sendall(b"Hashes verified and message received successfully.")
-
-                if steg_flag == b'1':
-                    os.remove("secret_image.png")
+        while True:
+            conn, addr = server_socket.accept()
+            with conn:
+                print(f"Connected to {addr}")
+                print(f"Server MAC Address: {mac_address}")
+                if check_root():
+                    print(f"Client MAC Address: {get_ip_mac_address(addr[0])}")
+                else:
+                    print("Getting the MAC Address of another device requires administrator permissions")
+                conn.sendall(serialized_public_key)
+                while True:
+                    try:
+                        data_length = int.from_bytes(receive_in_chunks(conn, 4), 'big')
+                        data = receive_in_chunks(conn, data_length)
+                        if not data:
+                            break
+                        received_data = data.split(b'::')
+                        encrypted_key, encrypted_message, received_sha384_hash, received_sha512_hash, steg_flag = received_data[:5]
+                        decrypted_key = decrypt_with_rsa(private_key, encrypted_key)
+                        decrypted_message = decrypt_with_aes(decrypted_key, encrypted_message)
+                        blake2_hash = hashlib.blake2s(decrypted_message).hexdigest()
+                        if blake2_hash != received_sha512_hash.decode():
+                            print("Error: Blake2 hash does not match. Communication may have been altered.")
+                            break
+                        sha384_hash = hashlib.sha384(decrypted_message).hexdigest()
+                        if sha384_hash != received_sha384_hash.decode():
+                            print("Error: SHA-384 hash does not match.")
+                            break
+                        sha512_hash = hashlib.sha512(decrypted_message).hexdigest()
+                        if sha512_hash != received_sha512_hash.decode():
+                            print("Error: SHA-512 hash does not match.")
+                            break
+                        with open("received_message", 'wb') as file:
+                            file.write(decrypted_message)
+                        print("Hashes verified and message received successfully.")
+                        conn.sendall(b"Hashes verified and message received successfully.")
+                        if steg_flag == b'1':
+                            os.remove("secret_image.png")
+                    except Exception as e:
+                        print(f"An error occurred: {e}")
+                        break
 
 def get_host_ip():
     try:
@@ -259,7 +249,6 @@ def start_client(host, port):
 
         while True:
             input_type = input("Enter 'message' to send a message, 'file' to send the contents of a file (or 'exit' to quit): ").strip().lower()
-
             if input_type == 'exit':
                 break
             elif input_type == 'message':
@@ -279,6 +268,8 @@ def start_client(host, port):
                 else:
                     print("File not found. Please try again.")
                     continue
+
+            blake2_hash = hashlib.blake2s(message).hexdigest()
 
             use_steg = input("Use steganography techniques? An image will be requested (Y/N)").strip().lower()
             if use_steg == 'y':
@@ -303,7 +294,7 @@ def start_client(host, port):
             print(f"SHA-384 Hash of the message: {sha384_hash}")
             print(f"Encrypted message: {encrypted_message}")
 
-            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography)
+            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, blake2_hash, is_steganography)
 
             client_socket.sendall(data_to_send)
 
