@@ -299,7 +299,6 @@ def start_client(host, port):
 
             print(f"Sending encrypted_key: {encrypted_key.decode()}")
             print(f"Sending encrypted_message: {encrypted_message}")
-            print(f"Sending sha384_hash: {sha384_hash.decode()}")
             print(f"Sending sha512_hash: {encrypted_message_hash_sha512}")
             send_in_chunks(client_socket, data_to_send)
             response = client_socket.recv(1024)
