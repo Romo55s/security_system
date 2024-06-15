@@ -18,6 +18,18 @@ from scapy.all import ARP, Ether, srp
 def generate_aes_key():
     return secrets.token_bytes(32)
 
+def generate_private_rsa_key():
+    return rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+
+def generate_public_rsa_key(private_key):
+    return private_key.public_key()
+
+sha384_hash = hashlib.sha384()
+
 def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
     steg_flag = b'1' if is_steganography else b'0'
     return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode() + b'::' + steg_flag
