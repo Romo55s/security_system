@@ -15,8 +15,103 @@ import base64
 import secrets
 from scapy.all import ARP, Ether, srp
 
-def generate_aes_key():
-    return secrets.token_bytes(32)
+def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
+    if is_steganography:
+        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode()
+    else:
+        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode()
+
+def check_root():
+    return os.geteuid() == 0
+
+def get_ip_mac_address(ip_address):
+    if ip_address == 'localhost':
+        ip_address = '127.0.0.1'
+    arp_request = ARP(pdst=ip_address)
+    broadcast = Ether(dst="ff:ff:ff:ff:ff:ff")
+    arp_request_broadcast = broadcast / arp_request
+    answered_list = srp(arp_request_broadcast, timeout=1, verbose=False)[0]
+    if answered_list:
+        return answered_list[0][1].hwsrc
+    else:
+        return None
+
+CHUNK_SIZE = 4096
+
+def get_mac_address():
+    mac = hex(uuid.getnode()).replace('0x', '').upper()
+    return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
+
+def generate_rsa_key_pair():
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    return private_key, public_key
+
+def save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path):
+    with open(private_key_path, "wb") as private_file:
+        private_file.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    with open(public_key_path, "wb") as public_file:
+        public_file.write(public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ))
+
+def load_rsa_key_pair(private_key_path, public_key_path):
+    with open(private_key_path, "rb") as private_file:
+        private_key = serialization.load_pem_private_key(
+            private_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+
+    with open(public_key_path, "rb") as public_file:
+        public_key = serialization.load_pem_public_key(
+            public_file.read(),
+            backend=default_backend()
+        )
+
+    return private_key, public_key
+
+def serialize_public_key(public_key):
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+
+def encrypt_with_rsa(public_key, message):
+    return public_key.encrypt(
+        message,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+def decrypt_with_rsa(private_key, encrypted_message):
+    return private_key.decrypt(
+        encrypted_message,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+def encrypt_with_aes(key, data):
+    iv = secrets.token_bytes(16)
+    cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    return iv + encryptor.update(data) + encryptor.finalize()
 
 def decrypt_with_aes(key, data):
     iv = data[:16]
@@ -26,6 +121,39 @@ def decrypt_with_aes(key, data):
 
 def hash_blake2(data):
     return hashlib.blake2b(data).hexdigest()
+
+def embed_message_in_image(image_path, message):
+    secret_image_path = "secret_image.png"
+    secret_image = lsb.hide(image_path, message)
+    secret_image.save(secret_image_path)
+    return secret_image_path
+
+def bytes_to_base64(bytes):
+    return base64.b64encode(bytes)
+
+def base64_to_bytes(base):
+    return base64.b64decode(base)
+
+def send_in_chunks(data, sock):
+    bytes_sent = 0
+    while bytes_sent < len(data):
+        sent = sock.send(data[bytes_sent:])
+        if sent == 0:
+            raise RuntimeError("Socket connection broken")
+        bytes_sent = sent + bytes_sent
+        print(f"Data sent: {data[bytes_sent - sent:bytes_sent]}")  # print statement to check the data being sent
+
+def receive_in_chunks(sock, length):
+    chunks = []
+    bytes_recd = 0
+    while bytes_recd < length:
+        chunk = sock.recv(min(length - bytes_recd, 2048))
+        if chunk == b'':
+            raise RuntimeError("Socket connection broken")
+        chunks.append(chunk)
+        bytes_recd = bytes_recd + len(chunk)
+        print(f"Data received: {chunk}")  # print statement to check the data being received
+    return b''.join(chunks)
 
 def start_server(host, port):
     private_key_path = "private_key.pem"
