@@ -4,15 +4,15 @@ import hashlib
 import uuid
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 from stegano import lsb
 from PIL import Image
 import base64
 from scapy.all import ARP, Ether, srp
 
-
 def check_root():
     return os.geteuid() == 0
-
 
 def get_ip_mac_address(ip_address):
     if ip_address == 'localhost':
@@ -26,30 +26,56 @@ def get_ip_mac_address(ip_address):
     else:
         return None
 
-
 CHUNK_SIZE = 4096
-
 
 def get_mac_address():
     mac = hex(uuid.getnode()).replace('0x', '').upper()
     return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
 
-
 def generate_rsa_key_pair():
     private_key = rsa.generate_private_key(
         public_exponent=65537,
-        key_size=2048
+        key_size=2048,
+        backend=default_backend()
     )
     public_key = private_key.public_key()
     return private_key, public_key
 
+def save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path):
+    with open(private_key_path, "wb") as private_file:
+        private_file.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    with open(public_key_path, "wb") as public_file:
+        public_file.write(public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ))
+
+def load_rsa_key_pair(private_key_path, public_key_path):
+    with open(private_key_path, "rb") as private_file:
+        private_key = serialization.load_pem_private_key(
+            private_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    
+    with open(public_key_path, "rb") as public_file:
+        public_key = serialization.load_pem_public_key(
+            public_file.read(),
+            backend=default_backend()
+        )
+
+    return private_key, public_key
 
 def serialize_public_key(public_key):
     return public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-
 
 def encrypt_with_rsa(public_key, message):
     return public_key.encrypt(
@@ -61,7 +87,6 @@ def encrypt_with_rsa(public_key, message):
         )
     )
 
-
 def decrypt_with_rsa(private_key, encrypted_message):
     return private_key.decrypt(
         encrypted_message,
@@ -72,10 +97,8 @@ def decrypt_with_rsa(private_key, encrypted_message):
         )
     )
 
-
 def hash_blake2(data):
     return hashlib.blake2b(data).hexdigest()
-
 
 def embed_message_in_image(image_path, message):
     secret_image_path = "secret_image.png"
@@ -83,14 +106,11 @@ def embed_message_in_image(image_path, message):
     secret_image.save(secret_image_path)
     return secret_image_path
 
-
 def bytes_to_base64(bytes):
     return base64.b64encode(bytes)
 
-
 def base64_to_bytes(base):
     return base64.b64decode(base)
-
 
 def send_in_chunks(socket, data):
     total_size = len(data)
@@ -98,7 +118,6 @@ def send_in_chunks(socket, data):
     for i in range(0, total_size, CHUNK_SIZE):
         chunk = data[i:i+CHUNK_SIZE]
         socket.sendall(chunk)
-
 
 def receive_in_chunks(socket):
     total_size = int.from_bytes(socket.recv(8), byteorder='big')
@@ -110,9 +129,16 @@ def receive_in_chunks(socket):
         data.extend(chunk)
     return bytes(data)
 
-
 def start_server(host, port):
-    private_key, public_key = generate_rsa_key_pair()
+    private_key_path = "private_key.pem"
+    public_key_path = "public_key.pem"
+
+    if not os.path.exists(private_key_path) or not os.path.exists(public_key_path):
+        private_key, public_key = generate_rsa_key_pair()
+        save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path)
+    else:
+        private_key, public_key = load_rsa_key_pair(private_key_path, public_key_path)
+
     serialized_public_key = serialize_public_key(public_key)
     mac_address = get_mac_address()
 
@@ -166,7 +192,7 @@ def start_server(host, port):
 
                 calculated_sha512_hash = hashlib.sha512(encrypted_message).hexdigest()
                 if calculated_sha512_hash != sha512_hash.decode():
-                    print("Error: 512 hash does not match.")
+                    print("Error: SHA-512 hash does not match.")
                     break
                 print(f"SHA-512 Hash of the encrypted message: {calculated_sha512_hash}")
 
@@ -195,7 +221,6 @@ def get_host_ip():
     except:
         print("Unable to get Host Ip")
         return None
-
 
 def start_client(host, port):
     mac_address = get_mac_address()
@@ -246,7 +271,7 @@ def start_client(host, port):
             print(f"Encrypted message: {encrypted_message}")
             print(f"SHA-512 Hash of the encryption: {encrypted_message_hash_sha512}")
 
-            if input_type == 'image':
+            if use_steg == 'y':
                 image_hash_blake2 = hash_blake2(base64_to_bytes(encrypted_message))
                 print(f"BLAKE2 Hash of the image with steganography: {image_hash_blake2}")
                 print(f"File size of the image: {os.path.getsize(secret_image_path)} bytes")
@@ -257,7 +282,6 @@ def start_client(host, port):
             send_in_chunks(client_socket, data_to_send)
             response = client_socket.recv(1024)
             print(f"Server response: {response.decode('utf-8')}")
-
 
 def main():
     mode = input("Enter 'client' to start a connection or 'server' to wait for a connection: ").strip().lower()
@@ -271,6 +295,6 @@ def main():
     else:
         print("Invalid mode. Use 'client' or 'server'.")
 
-
 if __name__ == "__main__":
     main()
+
