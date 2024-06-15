@@ -181,12 +181,12 @@ def start_server(host, port):
                 received_data = data.split(b'::')
                 print(f"Received encrypted_key: {received_data[0].hex()}")
                 print(f"Received encrypted_message: {received_data[1]}")
-                
+
                 if len(received_data) == 4:
-                    encrypted_key, encrypted_data, sha384_hash, sha512_hash = received_data
+                    encrypted_key, encrypted_message, sha384_hash, sha512_hash = received_data
                     is_steganography = True
                 elif len(received_data) == 3:
-                    encrypted_key, encrypted_data, sha384_hash = received_data
+                    encrypted_key, encrypted_message, sha384_hash = received_data
                     sha512_hash = None
                     is_steganography = False
                 else:
@@ -194,7 +194,7 @@ def start_server(host, port):
                     break
 
                 aes_key = decrypt_with_rsa(private_key, base64_to_bytes(encrypted_key))
-                decrypted_message = decrypt_with_aes(aes_key, base64_to_bytes(encrypted_data))
+                decrypted_message = decrypt_with_aes(aes_key, base64_to_bytes(encrypted_message))
 
                 if is_steganography:
                     try:
@@ -210,16 +210,16 @@ def start_server(host, port):
                     decrypted_message = revealed_message
 
                 calculated_sha512_hash = hashlib.sha512(decrypted_message.encode()).hexdigest()
-                if calculated_sha512_hash != sha512_hash.decode():
+                if calculated_sha512_hash.hex() != sha512_hash.decode():
                     print("Error: SHA-512 hash does not match.")
                     break
-                print(f"SHA-512 Hash of the encrypted message: {calculated_sha512_hash}")
+                print(f"SHA-512 Hash of the encrypted message: {calculated_sha512_hash.hex()}")
 
                 calculated_sha384_hash = hashlib.sha384(decrypted_message.encode()).hexdigest()
-                if calculated_sha384_hash != sha384_hash.decode():
+                if calculated_sha384_hash.hex() != sha384_hash.decode():
                     print("Error: SHA-384 hash does not match.")
                     break
-                print(f"SHA-384 Hash of the message: {calculated_sha384_hash}")
+                print(f"SHA-384 Hash of the message: {calculated_sha384_hash.hex()}")
 
                 conn.sendall(b"Hashes verified and message received successfully.")
 
