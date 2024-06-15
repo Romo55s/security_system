@@ -270,11 +270,14 @@ def start_client(host, port):
                 encrypted_message = encrypt_with_aes(aes_key, message)
                 encrypted_key = encrypt_with_rsa_inverted(public_key, aes_key)
 
-            data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash.encode(), sha512_hash.encode(), blake2_hash.encode(), is_steganography)
-            client_socket.sendall(data_to_send)
+            try:
+                data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash.encode(), sha512_hash.encode(), blake2_hash.encode(), is_steganography)
+                client_socket.sendall(data_to_send)
 
-            response = client_socket.recv(1024)
-            print(f"Server response: {response.decode('utf-8')}")
+                response = client_socket.recv(1024)
+                print(f"Server response: {response.decode('utf-8')}")
+            except Exception as e:
+                print(f"An error occurred while sending data or receiving response: {e}")
 
 def main():
     mode = input("Enter 'client' to start a connection or 'server' to wait for a connection: ").strip().lower()
