@@ -178,8 +178,12 @@ def start_server(host, port):
                 data = receive_in_chunks(conn)
                 if not data:
                     break
-
                 received_data = data.split(b'::')
+                print(f"Received encrypted_key: {received_data[0].decode()}")
+                print(f"Received encrypted_message: {received_data[1]}")
+                print(f"Received sha384_hash: {received_data[2].decode()}")
+                print(f"Received sha512_hash: {received_data[3].decode()}")
+                
                 if len(received_data) == 4:
                     encrypted_key, encrypted_data, sha384_hash, sha512_hash = received_data
                     is_steganography = True
@@ -295,6 +299,10 @@ def start_client(host, port):
 
             data_to_send = encrypted_key + b'::' + encrypted_message + b'::' + message_hash_sha384.encode() + b'::' + encrypted_message_hash_sha512.encode()
 
+            print(f"Sending encrypted_key: {encrypted_key.decode()}")
+            print(f"Sending encrypted_message: {encrypted_message}")
+            print(f"Sending sha384_hash: {sha384_hash.decode()}")
+            print(f"Sending sha512_hash: {encrypted_message_hash_sha512}")
             send_in_chunks(client_socket, data_to_send)
             response = client_socket.recv(1024)
             print(f"Server response: {response.decode('utf-8')}")
