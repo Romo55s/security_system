@@ -195,20 +195,25 @@ def start_server(host, port):
                 decrypted_message = decrypt_with_aes(aes_key, base64_to_bytes(encrypted_data))
 
                 if is_steganography:
-                    with open("received_image.png", "wb") as img_file:
-                        img_file.write(decrypted_message)
+                    try:
+                        revealed_message = lsb.reveal("received_image.png")
+                    except lsb.exceptions.ImageException as e:
+                        print(f"Error: Failed to open the steganography image. Reason: {e}")
+                        continue
 
-                    revealed_message = lsb.reveal("received_image.png")
-                    print(f"Decrypted and revealed message from the image: {revealed_message}")
-                    decrypted_message = revealed_message.encode()
+                    if revealed_message != decrypted_message.decode():
+                        print("Error: The extracted message from the steganography image does not match the decrypted message.")
+                        continue
 
-                calculated_sha512_hash = hashlib.sha512(decrypted_message).hexdigest()
+                    decrypted_message = revealed_message
+
+                calculated_sha512_hash = hashlib.sha512(decrypted_message.encode()).hexdigest()
                 if calculated_sha512_hash != sha512_hash.decode():
                     print("Error: SHA-512 hash does not match.")
                     break
                 print(f"SHA-512 Hash of the encrypted message: {calculated_sha512_hash}")
 
-                calculated_sha384_hash = hashlib.sha384(decrypted_message).hexdigest()
+                calculated_sha384_hash = hashlib.sha384(decrypted_message.encode()).hexdigest()
                 if calculated_sha384_hash != sha384_hash.decode():
                     print("Error: SHA-384 hash does not match.")
                     break
@@ -217,7 +222,7 @@ def start_server(host, port):
                 conn.sendall(b"Hashes verified and message received successfully.")
 
                 with open("received_message", 'wb') as file:
-                    file.write(decrypted_message)
+                    file.write(decrypted_message.encode())
 
                 conn.sendall(b"Message saved to file 'received_message'.")
 
@@ -264,18 +269,22 @@ def start_client(host, port):
 
             use_steg = input("Use steganography techniques? An image will be requested (Y/N)").strip().lower()
             message_hash_sha384 = hashlib.sha384(message).hexdigest()
-            
+
             aes_key = secrets.token_bytes(32)
             encrypted_message = bytes_to_base64(encrypt_with_aes(aes_key, message))
             encrypted_key = bytes_to_base64(encrypt_with_rsa(public_key, aes_key))
-            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message).hexdigest()
+            encrypted_message_hash_sha512 = hashlib.sha512(encrypted_message.encode()).hexdigest()
 
             if use_steg == 'y':
                 image_path = input("Enter the path of the image: ").strip()
                 if os.path.isfile(image_path):
-                    secret_image_path = embed_message_in_image(image_path, encrypted_message.decode())
-                    with open(secret_image_path, 'rb') as img_file:
-                        encrypted_message = bytes_to_base64(img_file.read())
+                    try:
+                        secret_image_path = embed_message_in_image(image_path, encrypted_message.decode())
+                        with open(secret_image_path, 'rb') as img_file:
+                            encrypted_message = img_file.read()
+                    except lsb.exceptions.ImageException as e:
+                        print(f"Error: Failed to embed the message into the steganography image. Reason: {e}")
+                        continue
                 else:
                     print("Image not found. Please try again.")
                     continue
@@ -304,4 +313,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
