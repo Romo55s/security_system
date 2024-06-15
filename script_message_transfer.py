@@ -272,7 +272,7 @@ def start_client(host, port):
 
             try:
                 data_to_send = format_data(encrypted_key, encrypted_message, sha384_hash.encode(), sha512_hash.encode(), blake2_hash.encode(), is_steganography)
-                client_socket.sendall(data_to_send)
+                send_in_chunks(data_to_send, client_socket)
 
                 response = client_socket.recv(1024)
                 print(f"Server response: {response.decode('utf-8')}")
