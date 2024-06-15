@@ -17,9 +17,9 @@ from scapy.all import ARP, Ether, srp
 
 def format_data(encrypted_key, encrypted_message, sha384_hash, sha512_hash, is_steganography):
     if is_steganography:
-        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash + b'::' + sha512_hash
+        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode() + b'::' + sha512_hash.encode()
     else:
-        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash
+        return encrypted_key + b'::' + encrypted_message + b'::' + sha384_hash.encode()
 
 def check_root():
     return os.geteuid() == 0
