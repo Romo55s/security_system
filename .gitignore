@@ -2,6 +2,7 @@
 
 # Ignorar el directorio del entorno virtual
 myenv/
+venv/
 
 # Ignorar todos los archivos .pyc
 *.pyc
