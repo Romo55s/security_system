@@ -1,0 +1,43 @@
+# .gitignore
+
+# Ignorar el directorio del entorno virtual
+myenv/
+
+# Ignorar todos los archivos .pyc
+*.pyc
+
+# Ignorar todos los archivos .pyo
+*.pyo
+
+# Ignorar todos los archivos .pyd
+*.pyd
+
+# Ignorar todos los archivos .so
+*.so
+
+# Ignorar todos los archivos .dll
+*.dll
+
+# Ignorar todos los archivos .swp
+*.swp
+
+# Ignorar todos los archivos .swo
+*.swo
+
+# Ignorar todos los archivos .swn
+*.swn
+
+# Ignorar todos los archivos .suo
+*.suo
+
+# Ignorar todos los archivos .bak
+*.bak
+
+# Ignorar todos los archivos .bak
+*.bak
+
+# Ignorar todos los archivos .log
+*.log
+
+# Ignorar todos los archivos .tmp
+*.tmp
