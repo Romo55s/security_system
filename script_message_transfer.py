@@ -1,3 +1,4 @@
+#1
 import socket
 import os
 import hashlib
@@ -13,6 +14,7 @@ from stegano import lsb
 from PIL import Image
 from scapy.all import ARP, Ether, srp
 
+#2
 def format_data(encrypted_message, sha384_hash, sha512_hash, blake2_hash, is_steganography):
     print("is_steganography function", is_steganography)
     if is_steganography:
@@ -24,12 +26,13 @@ def format_data(encrypted_message, sha384_hash, sha512_hash, blake2_hash, is_ste
         print("format data function sha512_hash", sha512_hash)
         return encrypted_message + b'::' + sha384_hash + b'::' + sha512_hash
 
+#3
 def check_root():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
     except:
         return False
-
+#4
 def get_ip_mac_address(ip_address):
     if ip_address == 'localhost':
         ip_address = '127.0.0.1'
@@ -41,13 +44,13 @@ def get_ip_mac_address(ip_address):
         return answered_list[0][1].hwsrc
     else:
         return None
-
+#5
 CHUNK_SIZE = 4096
-
+#6
 def get_mac_address():
     mac = hex(uuid.getnode()).replace('0x', '').upper()
     return ':'.join(mac[i:i+2] for i in range(0, 12, 2))
-
+#7
 def generate_rsa_key_pair():
     private_key = rsa.generate_private_key(
         public_exponent=65537,
@@ -55,7 +58,7 @@ def generate_rsa_key_pair():
     )
     public_key = private_key.public_key()
     return private_key, public_key
-
+#8
 def save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path):
     with open(private_key_path, "wb") as private_file:
         private_file.write(private_key.private_bytes(
@@ -69,7 +72,7 @@ def save_rsa_key_pair(private_key, public_key, private_key_path, public_key_path
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         ))
-
+#9
 def load_rsa_key_pair(private_key_path, public_key_path):
     with open(private_key_path, "rb") as private_file:
         private_key = serialization.load_pem_private_key(
@@ -83,13 +86,13 @@ def load_rsa_key_pair(private_key_path, public_key_path):
         )
 
     return private_key, public_key
-
+#10
 def serialize_public_key(public_key):
     return public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-
+#11
 def encrypt_with_rsa(public_key, message):
     return public_key.encrypt(
         message,
@@ -99,7 +102,7 @@ def encrypt_with_rsa(public_key, message):
             label=None
         )
     )
-
+#12
 def decrypt_with_rsa(private_key, encrypted_message):
     return private_key.decrypt(
         encrypted_message,
@@ -109,10 +112,10 @@ def decrypt_with_rsa(private_key, encrypted_message):
             label=None
         )
     )
-
+#13
 def hash_blake2(data):
     return hashlib.blake2b(data).hexdigest()
-
+#14
 def embed_message_in_image(image_path, message):
     secret_image_path = "secret_image.png"
     try:
@@ -122,20 +125,20 @@ def embed_message_in_image(image_path, message):
     except lsb.exceptions.ImageException as e:
         print(f"Error: Failed to embed the message into the steganography image. Reason: {e}")
         return None
-
+#15
 def bytes_to_base64(bytes):
     return base64.b64encode(bytes)
-
+#16
 def base64_to_bytes(base):
     return base64.b64decode(base)
-
+#17
 def send_in_chunks(socket, data):
     total_size = len(data)
     socket.sendall(total_size.to_bytes(8, byteorder='big'))
     for i in range(0, total_size, CHUNK_SIZE):
         chunk = data[i:i+CHUNK_SIZE]
         socket.sendall(chunk)
-
+#18
 def receive_in_chunks(socket):
     total_size = int.from_bytes(socket.recv(8), byteorder='big')
     data = bytearray()
@@ -145,11 +148,11 @@ def receive_in_chunks(socket):
             break
         data.extend(chunk)
     return bytes(data)
-
+#19
 def validate_blake2_hash(received_hash, data):
     calculated_hash = hash_blake2(data)
     return received_hash == calculated_hash
-
+#20
 def start_server(host, port):
     private_key_path = "private_key.pem"
     public_key_path = "public_key.pem"
@@ -244,7 +247,8 @@ def start_server(host, port):
                         print("Message saved to received_message file.")
                     except socket.error as e:
                         print(f"An error occurred: {e}")
-                        break
+
+#21                        break
 def get_host_ip():
     try:
         s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
@@ -256,6 +260,7 @@ def get_host_ip():
         print("Unable to get Host Ip")
         return None
 
+#22
 def start_client(host, port):
     mac_address = get_mac_address()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
@@ -321,6 +326,7 @@ def start_client(host, port):
                 print(f"Server response: {response.decode('utf-8')}")
             except Exception as e:
                 print(f"An error occurred while sending data or receiving response: {e}")
+#23
 def main():
     mode = input("Enter 'c' to start a connection or 's' to wait for a connection: ").strip().lower()
     host = "localhost"
