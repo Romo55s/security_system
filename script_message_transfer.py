@@ -323,7 +323,7 @@ def start_client(host, port):
                 print(f"An error occurred while sending data or receiving response: {e}")
 def main():
     mode = input("Enter 'c' to start a connection or 's' to wait for a connection: ").strip().lower()
-    host = "localhost"
+    host = get_host_ip()
     port = 12345
     if mode == 'c':
         target_ip = input("Enter the destination IP: ").strip()
